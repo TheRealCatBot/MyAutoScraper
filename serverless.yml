@@ -1,0 +1,105 @@
+service: myauto-rekognition
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: us-east-1
+  environment:
+    DYNAMO_DB_TABLE: rekogintionAnalysesDB
+    REKOGNITION_SNS_TOPIC_ARN: !Ref RekognitionSNSTopic
+    REKOGNITION_ROLE_ARN: !GetAtt RekognitionSNSRole.Arn
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - rekognition:DetectLabels
+            - rekognition:StartLabelDetection
+            - rekognition:GetLabelDetection
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+          Resource: !GetAtt RekognitionTable.Arn
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+          Resource: arn:aws:s3:::${self:custom.bucketName}/*
+        - Effect: Allow
+          Action:
+            - iam:PassRole
+          Resource: !GetAtt RekognitionSNSRole.Arn
+
+custom:
+  bucketName: myauto-car-images-${self:provider.region}
+
+functions:
+  startProcessingMedia:
+    handler: lambda_handler.start_processing_media
+    events:
+      - s3:
+          bucket: ${self:custom.bucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .jpg
+      - s3:
+          bucket: ${self:custom.bucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .jpeg
+      - s3:
+          bucket: ${self:custom.bucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .png
+      - s3:
+          bucket: ${self:custom.bucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .mp4
+
+  handleLabelDetection:
+    handler: lambda_handler.handle_label_detection
+    events:
+      - sns:
+          arn: !Ref RekognitionSNSTopic
+          topicName: rekognition-job-complete
+
+resources:
+  Resources:
+    RekognitionTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: rekogintionAnalysesDB
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+
+    RekognitionSNSTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: rekognition-job-complete
+
+    RekognitionSNSRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: RekognitionSNSPublishRole
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: rekognition.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: RekognitionSNSPublish
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: sns:Publish
+                  Resource: !Ref RekognitionSNSTopic
