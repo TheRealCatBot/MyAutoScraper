@@ -5,6 +5,17 @@ import zipfile
 import argparse
 import boto3
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_REGION"),
+    )
 
 # ─────────────────────────────────────────────
 # API helpers
@@ -100,7 +111,7 @@ def zip_directory(directory: str) -> str:
 
 def upload_directory_to_s3(local_directory: str, bucket_name: str, s3_prefix: str = "") -> None:
     """Recursively upload every file under *local_directory* to S3."""
-    s3 = boto3.client("s3")
+    s3 = get_s3_client()
     uploaded = 0
     for root, _, files in os.walk(local_directory):
         for filename in files:
@@ -118,7 +129,7 @@ def upload_directory_to_s3(local_directory: str, bucket_name: str, s3_prefix: st
 
 def upload_file_to_s3(local_path: str, bucket_name: str, s3_key: str) -> None:
     """Upload a single file to S3."""
-    s3 = boto3.client("s3")
+    s3 = get_s3_client()
     try:
         s3.upload_file(local_path, bucket_name, s3_key)
         print(f"  ✔ Uploaded ZIP → s3://{bucket_name}/{s3_key}")
@@ -192,15 +203,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--s3-bucket",
         type=str,
+        default=os.getenv("S3_BUCKET"),
         metavar="BUCKET",
-        help="S3 bucket name. If provided, images (or the ZIP) are uploaded to this bucket.",
+        help="S3 bucket name (defaults to S3_BUCKET in .env).",
     )
     parser.add_argument(
         "--s3-prefix",
         type=str,
-        default="myauto-images",
+        default=os.getenv("S3_PREFIX", "myauto-images"),
         metavar="PREFIX",
-        help="S3 key prefix / folder path (default: myauto-images).",
+        help="S3 key prefix / folder path.",
     )
 
     asyncio.run(main(parser.parse_args()))

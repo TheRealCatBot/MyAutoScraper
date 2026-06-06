@@ -1,0 +1,4 @@
+aiohttp
+boto3
+botocore
+python-dotenv
